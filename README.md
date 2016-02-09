@@ -1,2 +1,3 @@
-# youtube-mp3
-Convert video to mp3
+# grab-mp3
+
+For educational purposes only.
