@@ -3,7 +3,9 @@ from urllib.parse import parse_qs
 from urllib.parse import urlencode 
 from urllib.request import urlopen 
 from urllib.request import urlretrieve
-import sys
+
+import os
+import subprocess
 
 class VideoData:
     fmt_types = {
@@ -60,13 +62,15 @@ class VideoData:
         elif(watch_url in parse.keys()):
             request_url = request_url + '=' + parse[watch_url][0]
         else:
-            sys.exit("Invalid or unsupported YouTube URL: %s" % self._video_url)
+            print("Invalid or unsupported YouTube URL: %s" % self._video_url)
         
         request = urlopen(request_url) 
         self._video_info = parse_qs(request.read())
         
         for key in self._video_info.keys():
-            self._video_info[key.decode('utf-8')] = self._video_info.pop(key) 
+            self._video_info[key.decode('utf-8')] = self._video_info.pop(key)
+            
+        self._get_streams()
     
     def get_title(self): 
         return self._video_info['title'][0].decode('utf-8')
@@ -82,41 +86,46 @@ class VideoData:
         elif(quality in ['hq', 'mq', 'sd', 'max']):
             thumbnail[-1] = quality + thumbnail[-1]
         else:
-            sys.exit("Invalid thumbnail quality prefix: %s" % quality)
+            print("Invalid thumbnail quality prefix: %s" % quality)
         thumbnail = '/'.join(thumbnail)
         return thumbnail
     
-    def get_streams(self):
-        streams = {}
+    def _get_streams(self):
+        self.streams = {}
         fmt_stream_map = self._video_info['url_encoded_fmt_stream_map'][0] \
             .decode('utf-8').split(',')
         # parse again because youtube encodes twice
         entries = [parse_qs(entry) for entry in fmt_stream_map]  
         for i in range(len(entries)): 
-            streams[((entries[i])['itag'][0])] = ((entries[i])['url'][0])
-        return streams
+            self.streams[((entries[i])['itag'][0])] = ((entries[i])['url'][0])
+        return self.streams
     
-    def _available_itags(self, streams):
-        return [int(value) for value in list(streams.keys())]
+    def _available_itags(self):
+        return [int(value) for value in list(self.streams.keys())]
     
-    def get_available_streams(self, streams):
-        itags = self._available_itags(streams) 
+    def get_available_streams(self):
+        itags = self._available_itags() 
         for itag in itags:
             print("{0}: {1}".format(itag, self.fmt_types[itag])) 
     
-    def download_stream(self, streams, itag, filename):
-        if not streams:
-            sys.exit("No streams available for this video")
+    def _create_file_name(self, itag):
+        filename = self.get_title().replace(" ", "")
+        filename = filename.replace(":", "")
+        return (filename + '.' + 
+                self.fmt_types[itag].split(',')[0].lower())
+    
+    def _download_stream(self, itag): 
+        if not self.streams:
+            print("No streams available for this video")
         
-        if itag not in self._available_itags(streams):
-            sys.exit("itag not found") 
+        if itag not in self._available_itags():
+            print("itag not found") 
          
-        request = urlopen(streams[str(itag)])  
+        request = urlopen(self.streams[str(itag)])  
         meta = request.info() 
         file_size = int(meta.get_all("Content-Length")[0])      
 
-        file = open(filename + '.' + 
-                    self.fmt_types[itag].split(',')[0].lower(), "wb") 
+        file = open(self._create_file_name(itag), "wb") 
         blocksize = 8192
         file_dl_size = 0               
         while True:
@@ -127,15 +136,24 @@ class VideoData:
             print("Downloading: {0}/{1} Bytes".format(file_dl_size, file_size))
         file.close() 
         
-        if(file_dl_size == file_size):
-            print("Video successfully downloaded.")
+        return (file_dl_size == file_size)
+            
+    def extract_audio(self, itag, sound_file):
+        video_file = self._create_file_name(itag) 
+        if(self._download_stream(itag) and not os.path.isfile(video_file)):
+            command = ['ffmpeg',
+                       '-i', video_file,
+                       '-vn',
+                       '-ar', '44100',
+                       '-ac', '2',
+                       '-ab', '192k',
+                       '-f', 'mp3', sound_file.split('.')[0] + ".mp3"]
+            subprocess.call(command)
         else:
-            sys.exit("Video failed to properly download.")
-        
+            print("Audio file already exists!")
+            
 if __name__ == '__main__':
     vinfo = VideoData('https://www.youtube.com/watch?v=GQQMLE4FuIQ')
     print(vinfo.get_title())
-    print(vinfo.get_thumbnail_url('hq'))
-    streams = vinfo.get_streams()  
-    vinfo.get_available_streams(streams)
-    vinfo.download_stream(streams, 22, "video_test")
+    print(vinfo.get_thumbnail_url('hq'))  
+    vinfo.extract_audio(22, "audio_file.mp3")
