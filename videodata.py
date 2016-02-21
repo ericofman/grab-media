@@ -140,7 +140,7 @@ class VideoData:
             
     def extract_audio(self, itag, sound_file):
         video_file = self._create_file_name(itag) 
-        if(self._download_stream(itag) and not os.path.isfile(video_file)):
+        if(self._download_stream(itag) and not os.path.isfile(sound_file)):
             command = ['ffmpeg',
                        '-i', video_file,
                        '-vn',
